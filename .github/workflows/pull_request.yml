@@ -1,0 +1,54 @@
+name: PR workflow
+
+on:
+  # Trigger analysis when pushing in master or pull requests, and when creating
+  # a pull request.
+  push:
+    branches:
+      - dev
+  pull_request:
+      types: [opened, synchronize, reopened]
+
+jobs:
+  pr_build:
+  # TODO: no need when pushing on dev, the other workflow will already take on
+    name: Builds
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    container: node:lts-slim
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 2
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v2
+        with:
+          node-version: 16
+          cache: 'yarn'
+        
+      - name: Cache Turbo and Next
+        uses: actions/cache@v3
+        with:
+          key: ${{ runner.os }}-turbo-next-${{ hashFiles('**/yarn.lock') }}
+          path: |
+            "apps/**/.next/"
+            "apps/**/.turbo/"
+
+      - name: Install dependencies
+        run: |
+          yarn install --immutable
+
+      - name: Build
+        run: yarn run build
+
+      - name: Upload builds folders
+        uses: actions/upload-artifact@v3
+        with:
+          name: builds
+          path: |
+            apps/**/build
+            apps/**/.next
+            apps/**/dist
+

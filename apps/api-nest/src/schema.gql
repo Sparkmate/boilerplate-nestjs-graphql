@@ -1,0 +1,74 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+input CreateUserInput {
+  """email of the user"""
+  email: String!
+
+  """first name of the user"""
+  firstName: String!
+
+  """last name of the user"""
+  lastName: String!
+
+  """email of the user"""
+  password: String!
+}
+
+type JwtToken {
+  token: String!
+}
+
+input LoginUserInput {
+  """email of the user"""
+  email: String!
+
+  """email of the user"""
+  password: String!
+}
+
+type Mutation {
+  createUser(createUserInput: CreateUserInput!): User!
+  login(loginUserInput: LoginUserInput!): JwtToken!
+  removeUser(userId: String!): User!
+  updateUser(updateUserInput: UpdateUserInput!): User!
+}
+
+type Query {
+  me: User!
+  user(userId: String!): User!
+  users: [User!]!
+}
+
+input UpdateUserInput {
+  """email of the user"""
+  email: String
+
+  """first name of the user"""
+  firstName: String
+
+  """last name of the user"""
+  lastName: String
+
+  """email of the user"""
+  password: String
+  userId: String!
+}
+
+type User {
+  """email of the user"""
+  email: String!
+
+  """first name of the user"""
+  firstName: String
+
+  """last name of the user"""
+  lastName: String
+
+  """password of the user"""
+  password: String!
+
+  """id of the user"""
+  userId: String!
+}

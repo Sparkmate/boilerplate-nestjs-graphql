@@ -1,0 +1,130 @@
+name: Codebases deployment
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'apps/web-vite/**'
+      - '.github/**'
+
+
+env:
+  PROJECT_ID: '${{ secrets.GCLOUD_PROJECT_ID }}'
+  REGION: europe-west1
+
+
+jobs:
+  build:
+    name: Build JS
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    container: node:lts-slim
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 2
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v2
+        with:
+          node-version: 16
+          cache: 'yarn'
+
+      - name: Cache Turbo
+        uses: actions/cache@v3
+        with:
+          key: ${{ runner.os }}-turbo-next-${{ hashFiles('**/yarn.lock') }}
+          path: |
+            **/.turbo/
+            **/dist/
+            !**/node_modules/**
+
+      - name: Install dependencies
+        run: |
+          yarn install --immutable
+
+      - name: Build
+        run: yarn run build
+
+      - name: Upload builds folders
+        uses: actions/upload-artifact@v3
+        with:
+          name: builds
+          path: |
+            **/dist
+            !**/node_modules/**
+
+  web-docker-build:
+    runs-on: ubuntu-latest
+    name: Web Docker
+    needs: ['build']
+    env:
+      SERVICE: github-web-vite
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v2
+        with:
+          node-version: 16
+          cache: 'yarn'
+
+      - name: Download JS build
+        uses: actions/download-artifact@v3
+        with:
+          name: builds
+
+      - name: Dependencies, turborepo and prune
+        run: |
+          npm i -g turbo@1.1.5
+          yarn install --immutable
+          turbo prune --scope=web --docker
+    
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v0'
+        with:
+          credentials_json: '${{ secrets.GCLOUD_SERVICE_KEY }}'
+
+      - name: Configure docker
+        run: gcloud auth configure-docker
+
+      - name: Build and Push Container
+        run: |
+          docker build --build-arg PKG_TARGET=web --cache-from eu.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest -t eu.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest -f apps/web/Dockerfile .
+          docker push eu.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
+
+  web-deploy:
+    runs-on: ubuntu-latest
+    name: Web platform deploy
+    needs: ['web-vite-docker-build']
+    env:
+      SERVICE: github-web-vite
+    steps:
+      - id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v0'
+        with:
+          credentials_json: '${{ secrets.GCLOUD_SERVICE_KEY }}'
+
+      - name: Deploy Web client to Cloud Run
+        run: >
+          gcloud run deploy --project ${{ env.PROJECT_ID }} ${{ env.SERVICE }}
+          --concurrency 80
+          --region ${{ env.REGION }}
+          --memory 1Gi
+          --platform managed
+          --allow-unauthenticated
+          --timeout 40
+          --image 'eu.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest'
+          --set-env-vars STAGE=staging,NODE_ENV=production
+
+      # If required, use the Cloud Run url output in later steps
+      - name: Show Output
+        run: echo ${{ steps.deploy.outputs.url }}
