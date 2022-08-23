@@ -30,5 +30,6 @@ module.exports = {
     quotes: [2, "double", { avoidEscape: true }],
     "prettier/prettier": ["error", { singleQuote: false }],
     "import/prefer-default-export": "off",
+    "class-methods-use-this": "off",
   },
 };
