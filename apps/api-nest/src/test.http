@@ -1,7 +1,0 @@
-###
-
-# curl http://localhost:3000/profile
-GET http://localhost:8080/profile
-
-###
-

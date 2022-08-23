@@ -6,7 +6,7 @@ on:
       - dev
       - main
     paths:
-      - 'apps/web-vite/**'
+      - 'apps/api/**'
       - '.github/**'
 
 
@@ -57,12 +57,12 @@ jobs:
             **/dist
             !**/node_modules/**
 
-  web-docker-build:
+  api-docker-build:
     runs-on: ubuntu-latest
-    name: Web Docker
+    name: API Docker
     needs: ['build']
     env:
-      SERVICE: github-web-vite
+      SERVICE: github-api
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -84,8 +84,8 @@ jobs:
         run: |
           npm i -g turbo@1.1.5
           yarn install --immutable
-          turbo prune --scope=web --docker
-    
+          turbo prune --scope=api --docker
+
       - id: 'auth'
         name: 'Authenticate to Google Cloud'
         uses: 'google-github-actions/auth@v0'
@@ -97,33 +97,49 @@ jobs:
 
       - name: Build and Push Container
         run: |
-          docker build --build-arg PKG_TARGET=web --cache-from eu.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest -t eu.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest -f apps/web/Dockerfile .
+          docker build --build-arg PKG_TARGET=tdlg-api --cache-from eu.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest -t eu.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest -f apps/api/Dockerfile .
           docker push eu.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest
 
-  web-deploy:
+
+  api-deploy:
     runs-on: ubuntu-latest
-    name: Web platform deploy
-    needs: ['web-vite-docker-build']
+    name: API deploy
+    needs: ['api-docker-build']
     env:
-      SERVICE: github-web-vite
+      SERVICE: github-api
     steps:
       - id: 'auth'
         name: 'Authenticate to Google Cloud'
         uses: 'google-github-actions/auth@v0'
         with:
           credentials_json: '${{ secrets.GCLOUD_SERVICE_KEY }}'
+      - name: Deploy API to Cloud Run (Staging)
+        if: endsWith(github.ref, '/dev')
+        run: >
+          gcloud run deploy --project ${{ env.PROJECT_ID }} ${{ env.SERVICE }}
+          --concurrency 80 
+          --region ${{ env.REGION }}
+          --memory 1Gi
+          --platform managed
+          --set-cloudsql-instances ${{ secrets.INSTANCE_CONNECTION_NAME }}
+          --allow-unauthenticated
+          --timeout 40
+          --image 'eu.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest'
+          --set-env-vars STAGE=staging,NODE_ENV=production,INSTANCE_CONNECTION_NAME=${{ secrets.INSTANCE_CONNECTION_NAME }},DATABASE_USERNAME=${{ secrets.DATABASE_USERNAME }},DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }},DATABASE_NAME=${{ secrets.DATABASE_NAME_PRODUCTION }},DATABASE_HOST=/cloudsql/${{ secrets.INSTANCE_CONNECTION_NAME }},JWT_SECRET=${{ secrets.JWT_SECRET }},ADMIN_JWT_SECRET=${{ secrets.ADMIN_JWT_SECRET }},API_TOKEN_SALT=${{ secrets.API_TOKEN_SALT_PRODUCTION  }},APP_KEYS=${{ secrets.APP_KEYS }},DATABASE_PORT=5432
 
-      - name: Deploy Web client to Cloud Run
+      - name: Deploy API to Cloud Run (Production)
+        if: endsWith(github.ref, '/master')  || endsWith(github.ref, '/main')
         run: >
           gcloud run deploy --project ${{ env.PROJECT_ID }} ${{ env.SERVICE }}
           --concurrency 80
           --region ${{ env.REGION }}
           --memory 1Gi
           --platform managed
+          --set-cloudsql-instances ${{ secrets.INSTANCE_CONNECTION_NAME }}
           --allow-unauthenticated
           --timeout 40
           --image 'eu.gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE }}:latest'
-          --set-env-vars STAGE=staging,NODE_ENV=production
+          --set-env-vars STAGE=production,NODE_ENV=production,INSTANCE_CONNECTION_NAME=${{ secrets.INSTANCE_CONNECTION_NAME }},DATABASE_USERNAME=${{ secrets.DATABASE_USERNAME }},DATABASE_PASSWORD=${{ secrets.DATABASE_PASSWORD }},DATABASE_NAME=${{ secrets.DATABASE_NAME_PRODUCTION }},DATABASE_HOST=/cloudsql/${{ secrets.INSTANCE_CONNECTION_NAME }},JWT_SECRET=${{ secrets.JWT_SECRET }},ADMIN_JWT_SECRET=${{ secrets.ADMIN_JWT_SECRET }},API_TOKEN_SALT=${{ secrets.API_TOKEN_SALT_PRODUCTION  }},APP_KEYS=${{ secrets.APP_KEYS }},DATABASE_PORT=5432
 
       # If required, use the Cloud Run url output in later steps
       - name: Show Output
